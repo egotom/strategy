@@ -1,0 +1,17 @@
+[{
+		"sequence": "eaf2f7ed-5213-451a-b2b6-3d0acb36aac2",
+		"code": "000001.XSHG",
+		"open": "Sell",
+		"trigger": ["and = 3140 "],
+		"close": [],
+		"repeat": "1",
+		"quantity": "1",
+		"expiry": "2024-06-07T17:18",
+		"created": "2024-06-05T17:18",
+		"open_at": "",
+		"close_at": "",
+		"open_value": "0",
+		"close_value": "0",
+		"profit": "0"
+	}
+]
