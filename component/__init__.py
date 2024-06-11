@@ -2,7 +2,6 @@ __version__ = '1.0'
 
 from .text import TextFrame
 from .condition import ConditionFrame
-from .dateTimePicker import DateTimePicker
 from .labelMenu import LabelMenu
 from .textList import TextList
 from .summary import SummaryView, Summary

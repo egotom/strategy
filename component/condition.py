@@ -9,7 +9,7 @@ class ConditionFrame(ctk.CTkFrame):
         label = ctk.CTkLabel(master, text=title)
         label.grid(row=r, column=c, padx=20, pady=20, sticky="w")
 
-        self.cbOpt = ctk.CTkOptionMenu(master, values=["and", "or", "not"])
+        self.cbOpt = ctk.CTkOptionMenu(master, values=["and", "or"])
         self.cbOpt.grid(row=r, column=c+2, padx=20, pady=20, sticky="w")
 
         self.cbOpt2 = ctk.CTkOptionMenu(master, values=["=", ">", "<", "+", "-"], command=self.addCBPeriod)

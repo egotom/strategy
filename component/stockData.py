@@ -67,9 +67,9 @@ if __name__ == '__main__':
     # df=get_price('000001.XSHG',frequency='15m',count=10)  #支持'1m','5m','15m','30m','60m'
     # print('上证指数分钟线\n',df)
 
-    df=get_price('000001.XSHG',frequency='15m', count=10)  #支持'1m','5m','15m','30m','60m'
+    df=get_price('000001.XSHG',frequency='5m', count=1000)  #支持'1m','5m','15m','30m','60m'
     print('上证指数分钟线\n', df)
-    for id, row in df.iterrows():
-        print(id, row[['open','high','low','close']].mean())
+    # for id, row in df.iterrows():
+    #     print(id, row[['open','high','low','close']].mean())
     # print((df.index[1]-df.index[0]).total_seconds()/60)
 # Ashare 股票行情数据( https://github.com/mpquant/Ashare ) 
