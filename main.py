@@ -138,7 +138,7 @@ def summaryOrder():
     global Summary_window, result_queue
     if Summary_window is None or not Summary_window.winfo_exists():
         Summary_window = SummaryView(result_queue)  # create window if its None or destroyed
-        TreeView(Summary_window, result_queue)
+        # TreeView(Summary_window, result_queue)
         Summary_window.focus()
     else:
         Summary_window.focus()
@@ -217,5 +217,7 @@ threading.Thread(target=Summary, args=(result_queue,), daemon=True).start()
 #         pass
 #     app.after(100, check_queue)
 # check_queue()
-
-app.mainloop()
+try:
+    app.mainloop()
+except Exception as e:
+    print("app.mainloop(): ", e)

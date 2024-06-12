@@ -1,4 +1,4 @@
-from stockData import *
+from .stockData import *
 import tkinter as tk
 from tkinter import ttk
 import customtkinter as ctk
@@ -8,12 +8,67 @@ from datetime import datetime, timezone, tzinfo, timedelta
 import pprint
 import pandas as pd  
 
-
 class SummaryView(ctk.CTkToplevel):
     def __init__(self, result_queue, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.geometry("600x600")
         self.title("策略汇总")
+
+        self.result_queue=result_queue
+        frame = ctk.CTkFrame(self)
+        frame.pack(fill=tk.BOTH, expand=True, padx=1, pady=10)
+
+        scrollbar_y = ttk.Scrollbar(frame, orient=tk.VERTICAL)
+        self.tree = ttk.Treeview(frame, columns=( "sequence", "代码", "操作", "数量", "开仓时间", "平仓时间", "利润"),  yscrollcommand=scrollbar_y.set)
+        scrollbar_y.config(command=self.tree.yview)
+
+        # 设置表头
+        self.tree.heading("#0", text="")
+        self.tree.heading("sequence", text="", anchor=tk.CENTER)
+        self.tree.heading("代码", text="代码")
+        self.tree.heading("操作", text="操作")
+        self.tree.heading("数量", text="数量")
+        self.tree.heading("开仓时间", text="开仓时间")
+        self.tree.heading("平仓时间", text="平仓时间")
+        self.tree.heading("利润", text="利润")
+
+        # 设置列
+        self.tree.column("#0", width=0, stretch=tk.NO)
+        self.tree.column("sequence",  width=0, stretch=tk.NO)
+        self.tree.column("代码", anchor=tk.CENTER, width=80)
+        self.tree.column("操作", anchor=tk.CENTER, width=80)
+        self.tree.column("数量", anchor=tk.CENTER, width=80)
+        self.tree.column("开仓时间", anchor=tk.CENTER, width=150)
+        self.tree.column("平仓时间", anchor=tk.CENTER, width=150)
+        self.tree.column("利润", anchor=tk.CENTER, width=100)
+
+        # 放置滚动条和表格
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        scrollbar_y.grid(row=0, column=1, sticky="ns")
+
+        # 配置表格框架的网格
+        frame.grid_rowconfigure(0, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+
+        self.check_queue()
+
+    def check_queue(self):
+        print("+++++++++++777777777777++++++++++++")
+        # while True:
+        try:
+            r = self.result_queue.get_nowait()
+            print("+++++++++++++++++++++++")
+            row=(r["sequence"], r["code"], r["open"], r["quantity"], r["open_at"], r["close_at"], r["profit"])
+            for item in self.tree.get_children():
+                item_values = self.tree.item(item, "values")
+                if item_values[0] == r["sequence"]:
+                    self.tree.item(item, values = row)
+                    return
+            self.tree.insert("", "end", values = row)
+
+        except Exception as e:
+            print("TreeView.check_queue(): ",e)
+        self.after(1000, self.check_queue)
 
 def Summary(q):
     fp=open("data.txt","r+")
@@ -36,16 +91,18 @@ def Summary(q):
             else:
                 q.put(task)
             data = data.loc[task["open_at"]:]
-            # (task["close_at"], task["close_value"])=judge(task["close"], data)
-            # if task["close_value"] == "" or task["close_at"] == "":
-            #     continue
-            # else:
-            #     q.put(task)
-            # factor = 1 if task["open"] == "Buy" else -1
-            # task["profit"] = factor * ( task["close_value"] - task["open_value"] ) * float(task["quantity"])
-            # q.put(task)
+            (task["close_at"], task["close_value"])=judge(task["close"], data)
+            if task["close_value"] == "" or task["close_at"] == "":
+                continue
+            else:
+                q.put(task)
+            factor = 1 if task["open"] == "Buy" else -1
+            task["profit"] = round(factor * ( task["close_value"] - task["open_value"] ) * float(task["quantity"]), 2)
+            q.put(task)
+            pprint.pprint(task)
+
     print("\nDone")
-    pprint.pprint(tasks)
+    # pprint.pprint(tasks)
 
 def judge(state, df):
     expression = {"and":[], "or":[]}
@@ -99,16 +156,13 @@ def judge(state, df):
         if len(ref)>0:
             fall[0]=int(ref[0])
 
-    print(rise, fall,"===============",expression)
+    # print(rise, fall,"===============",expression)
     for id, row in df.iterrows():
         # print(id )
         allAnd = True
         retv = ""
         for tt, its in  expression.items():
             for it in its:
-                optn=re.findall(r'(-?\d+\.?\d+)', it)
-                if len(optn)>0:
-                    retv=float(optn[0])
                 express = it.replace("LOW", str(row["low"])).replace("HIGH", str(row["high"]))
                 if rise[0] or fall[0]:
                     mean = row[['open','high','low','close']].mean()
@@ -126,7 +180,14 @@ def judge(state, df):
                         stack=stack[1:]
 
                 # print(express, "\t----------------", stack )
-                
+                optn=re.findall(r'(-?\d+\.?\d+)', express)
+                if len(optn)>1:
+                    if " and " in express:
+                        retv=float(optn[1])
+                    else: 
+                        retv=float(optn[0])
+                else:
+                    continue
                 try:
                     if eval(express):
                         # print(express,True,tt)
@@ -150,29 +211,6 @@ def judge(state, df):
             return (id, retv)
     return ("", "")
 
-
-def calculate_minutes_between(datetime_str1, datetime_str2, date_format="" ):
-    dfs=["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M"]
-    if date_format != "":
-        dfs.insert(0,date_format)
-    for df in dfs:
-        try:
-            datetime1 = datetime.strptime(datetime_str1, df)
-            datetime2 = datetime.strptime(datetime_str2, df)
-            delta = datetime1 - datetime2
-            minutes = abs(delta.total_seconds())/60
-            if minutes < 1440:
-                return minutes
-            days = minutes / 1440
-            if days < 7:
-                return days * 240
-            return days/7 * 1200
-
-        except Exception as e:
-            print("calculate_minutes_between: ",e)
-            
-    return None
-
 def str2timestamp(date_str, date_format=""):
     dfs=["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M"]
     if date_format != "":
@@ -187,21 +225,19 @@ def str2timestamp(date_str, date_format=""):
     
 def getData(order):
     period = {'1m':1,'5m':5,'15m':15,'30m':30,'60m':60,'1d':240,'1w':1200,'1M':7200}
-    # minutes=calculate_minutes_between(order["created"], order["expiry"])
     start = str2timestamp(order["created"])
     end = str2timestamp(order["expiry"])
-    if start is None or end is None:# or minutes is None:
+    if start is None or end is None:
         return None
     df=None
     # print(start, "---------------",  end)
     for key, value in period.items():
-        # ct= math.floor( minutes/value )
         df=get_price(order["code"], frequency=key, count=99999999)
         # print(key, df.shape, df.index[0] )
         # print(df.iloc[:3])
         if df.index[0] < start:
             df=df.loc[start:end]
-            print(df)
+            # print(df)
             break
         df=None
     return df 
@@ -211,11 +247,25 @@ if __name__ == "__main__":
 		"sequence": "eaf2f7ed-5213-451a-b2b6-3d0acb36aac2",
 		"code": "000001.XSHG",
 		"open": "Sell",
-		"trigger": ["and = 3129 "],
-		"close": ["and = 3029 "],
+		"trigger": ["and = 3080 "],
+		"close": ["and = 3051 "],
 		"quantity": "3",
 		"expiry": "2024-06-07T17:18",
 		"created": "2024-06-01T17:18",
+		"open_at": "",
+		"close_at": "",
+		"open_value": "0",
+		"close_value": "0",
+		"profit": "0"
+	},{
+		"sequence": "111111-5213-451a-b2b6-3d0acb36aac2",
+		"code": "000001.XSHG",
+		"open": "Buy",
+		"trigger": ["and < 2970 "],
+		"close": ["and > 3050 "],
+		"quantity": "1",
+		"expiry": "2024-06-07T17:18",
+		"created": "2024-01-01T17:18",
 		"open_at": "",
 		"close_at": "",
 		"open_value": "0",
