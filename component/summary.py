@@ -5,15 +5,16 @@ import customtkinter as ctk
 import json, time, random, math
 import threading, queue, re
 from datetime import datetime, timezone, tzinfo, timedelta
-import pprint
+import pprint, json
 import pandas as pd  
+import pickle
 
 class SummaryView(ctk.CTkToplevel):
-    def __init__(self, result_queue, *args, **kwargs):
+    def __init__(self, master, result_queue, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.geometry("600x600")
         self.title("策略汇总")
-
+        self.master = master
         self.result_queue=result_queue
         frame = ctk.CTkFrame(self)
         frame.pack(fill=tk.BOTH, expand=True, padx=1, pady=10)
@@ -53,11 +54,8 @@ class SummaryView(ctk.CTkToplevel):
         self.check_queue()
 
     def check_queue(self):
-        print("+++++++++++777777777777++++++++++++")
-        # while True:
         try:
             r = self.result_queue.get_nowait()
-            print("+++++++++++++++++++++++")
             row=(r["sequence"], r["code"], r["open"], r["quantity"], r["open_at"], r["close_at"], r["profit"])
             for item in self.tree.get_children():
                 item_values = self.tree.item(item, "values")
@@ -67,8 +65,8 @@ class SummaryView(ctk.CTkToplevel):
             self.tree.insert("", "end", values = row)
 
         except Exception as e:
-            print("TreeView.check_queue(): ",e)
-        self.after(1000, self.check_queue)
+            print("SummaryView.check_queue(): ", e)
+        self.master.after(1000, self.check_queue)
 
 def Summary(q):
     fp=open("data.txt","r+")
@@ -105,7 +103,7 @@ def Summary(q):
     # pprint.pprint(tasks)
 
 def judge(state, df):
-    expression = {"and":[], "or":[]}
+    expression = []
     period = {'1m':1,'5m':5,'15m':15,'30m':30,'60m':60,'1d':240,'1w':1200,'1M':7200}
     dfp = (df.index[1] - df.index[0]).total_seconds()/60
     # print(dfp)
@@ -120,34 +118,31 @@ def judge(state, df):
         if p[1] in ["=", ">", "<"] and p[3] !="":
             continue 
         if p[1] ==">":
-            tmp = f"LOW {p[1]} {p[2]} "
+            tmp = f"{p[0]} HIGH {p[1]} {p[2]} "
         if p[1] =="<":
-            tmp = f"HIGH {p[1]} {p[2]} "
+            tmp = f"{p[0]} LOW {p[1]} {p[2]} "
         if p[1] == "=":
-            tmp = f"HIGH > {p[2]} and {p[2]} > LOW "
+            tmp = f"{p[0]} HIGH > {p[2]} and {p[2]} > LOW "
         if p[1] in ["+","-"]:
             if dfp > period[p[3]]:
                 continue 
             else:
                 pn = math.ceil(period[p[3]] / dfp)
         if p[1] == "+":
-            tmp = f"RISE-{pn} > {p[2]} "
+            tmp = f"{p[0]} RISE-{pn} > {p[2]} "
         if p[1] == "-":
             tmp = f"{p[0]} FALL-{pn} > {p[2]} "
-        if p[0] == "and":
-            expression["and"].append(tmp)
-        if p[0] == "or":
-            expression["or"].append(tmp)
-        # print(expression,"........")
+        expression.append(tmp)
 
-    if len(expression["and"]) < 1 and len(expression["or"]) < 1:
+
+    if len(expression) < 1:
         return ("", "")
+        # print(expression,"........")
 
     stack=[]
     rise=[0, 0]
     fall=[0, 0]
-    mgs=expression["and"] + expression["or"] 
-    for it in  mgs:
+    for it in  expression:
         rer=re.findall(r'RISE-(\d+)', it)
         if len(rer)>0:
             rise[0]=int(rer[0])
@@ -156,59 +151,59 @@ def judge(state, df):
         if len(ref)>0:
             fall[0]=int(ref[0])
 
-    # print(rise, fall,"===============",expression)
+    print(rise, fall,"===============", expression)
     for id, row in df.iterrows():
         # print(id )
         allAnd = True
         retv = ""
-        for tt, its in  expression.items():
-            for it in its:
-                express = it.replace("LOW", str(row["low"])).replace("HIGH", str(row["high"]))
-                if rise[0] or fall[0]:
-                    mean = row[['open','high','low','close']].mean()
-                    stack.append(mean)
-                    if rise[0]:
-                        # print("-------------", rise[0])
-                        rValue = mean - min(stack[:rise[0]])
-                        express = re.sub(r'RISE-\d+', str(rValue), express)
+        for it in expression:
+            tt = it.split(" ")[0]
+            it = it[len(tt):]
+            # print(tt,"-------------", it)
+            express = it.replace("LOW", str(row["low"])).replace("HIGH", str(row["high"]))
+            if rise[0] or fall[0]:
+                mean = row[['open','high','low','close']].mean()
+                stack.append(mean)
+                if rise[0]:
+                    rValue = mean - min(stack[:rise[0]])
+                    express = re.sub(r'RISE-\d+', str(rValue), express)
 
-                    if fall[0]:
-                        fValue = max(stack[:fall[0]]) - mean
-                        express = re.sub(r'FALL-\d+', str(fValue), express)
+                if fall[0]:
+                    fValue = max(stack[:fall[0]]) - mean
+                    express = re.sub(r'FALL-\d+', str(fValue), express)
 
-                    if len(stack) > rise[0] and len(stack)>fall[0]:
-                        stack=stack[1:]
+                if len(stack) > rise[0] and len(stack)>fall[0]:
+                    stack=stack[1:]
 
-                # print(express, "\t----------------", stack )
-                optn=re.findall(r'(-?\d+\.?\d+)', express)
-                if len(optn)>1:
-                    if " and " in express:
-                        retv=float(optn[1])
-                    else: 
-                        retv=float(optn[0])
-                else:
-                    continue
-                try:
-                    if eval(express):
-                        # print(express,True,tt)
-                        if tt=="or":
-                            print(id, "\tat: ",retv, "\tLow:",row["low"], "\tHigh: ",row["low"], "\tregex: ",it)
-                            return (id, retv)
-                        else:
-                            continue
+            # print(express, "\t----------------", stack )
+            optn=re.findall(r'(-?\d+\.?\d+)', express)
+            if len(optn)>1:
+                if " and " in express:
+                    retv=float(optn[1])
+                else: 
+                    retv=float(optn[0])
+            else:
+                print("judge(): "," optn=re.findall(r'(-?\d+\.?\d+)', express)  ", express)
+                continue
+            try:
+                if eval(express):
+                    # print(express,True,tt)
+                    if tt=="or":
+                        print(id, "\tat: ",retv, "\tLow:",row["low"], "\tHigh: ",row["low"], "\tregex: ",it)
+                        return (id, retv)
                     else:
-                        if tt=="and":
-                            allAnd = False
-                            # print(allAnd,"----->>>>>>>>>>>>>>>--------")
-                            break
-                except Exception as e:
-                    print(e)
+                        continue
+                else:
+                    if tt=="and":
+                        allAnd = False
+                        
+            except Exception as e:
+                print("judge():", e, express)
 
-            if not allAnd:
-                break
         if allAnd:
             print(id, "\tat: ", retv, "\tLow:",row["low"], "\tHigh: ",row["low"], "\tregex: ",it)
             return (id, retv)
+
     return ("", "")
 
 def str2timestamp(date_str, date_format=""):
@@ -232,8 +227,8 @@ def getData(order):
     df=None
     # print(start, "---------------",  end)
     for key, value in period.items():
-        df=get_price(order["code"], frequency=key, count=99999999)
-        # print(key, df.shape, df.index[0] )
+        df=get_price(order["code"], frequency=key, count=100000)
+        print(key, df.shape, df.index[0] )
         # print(df.iloc[:3])
         if df.index[0] < start:
             df=df.loc[start:end]
@@ -243,35 +238,21 @@ def getData(order):
     return df 
 
 if __name__ == "__main__":
-    tasks = [{
-		"sequence": "eaf2f7ed-5213-451a-b2b6-3d0acb36aac2",
-		"code": "000001.XSHG",
-		"open": "Sell",
-		"trigger": ["and = 3080 "],
-		"close": ["and = 3051 "],
-		"quantity": "3",
-		"expiry": "2024-06-07T17:18",
-		"created": "2024-06-01T17:18",
-		"open_at": "",
-		"close_at": "",
-		"open_value": "0",
-		"close_value": "0",
-		"profit": "0"
-	},{
-		"sequence": "111111-5213-451a-b2b6-3d0acb36aac2",
-		"code": "000001.XSHG",
-		"open": "Buy",
-		"trigger": ["and < 2970 "],
-		"close": ["and > 3050 "],
-		"quantity": "1",
-		"expiry": "2024-06-07T17:18",
-		"created": "2024-01-01T17:18",
-		"open_at": "",
-		"close_at": "",
-		"open_value": "0",
-		"close_value": "0",
-		"profit": "0"
-	}]
+    tasks =[{
+        "sequence": "eaf2f7ed-5213-451a-b2b6-3d0acb36aac2",
+        "code": "000001.XSHG",
+        "open": "Sell",
+        "trigger": ["and = 3080 "],
+        "close": ["and = 3051 "],
+        "quantity": "3",
+        "expiry": "2024-06-07T17:18",
+        "created": "2024-06-01T17:18",
+        "open_at": "",
+        "close_at": "",
+        "open_value": "0",
+        "close_value": "0",
+        "profit": "0"
+    }]
     for task in tasks:
         print("\n\nSummary:\t", task["sequence"], "\t", task["code"], "\t", task["open"], "\t", task["trigger"], "\t", task["close"])
         data=getData(task)
@@ -288,6 +269,7 @@ if __name__ == "__main__":
             # else:
             #     q.put(task)
             factor = 1 if task["open"] == "Buy" else -1
-            task["profit"] = factor * ( task["close_value"] - task["open_value"] ) * float(task["quantity"])
-            # pprint.pprint(task)
-    pprint.pprint(tasks)
+            task["profit"] = round(factor * ( task["close_value"] - task["open_value"] ) * float(task["quantity"]))
+            print("\n")
+            pprint.pprint(task)
+    # pprint.pprint(tasks)

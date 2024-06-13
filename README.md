@@ -1,4 +1,4 @@
-﻿# 交易策略编辑器
+# 交易策略编辑器
 
 ```
 echo "# strategy" >> README.md
